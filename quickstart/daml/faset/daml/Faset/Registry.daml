@@ -8,6 +8,9 @@
 module Faset.Registry where
 
 import DA.Set (Set)
+import qualified DA.Set as Set
+
+import Faset.Types (RejectReason(..))
 
 -- | The single, serialising index of already-financed invoice hashes.
 --   `signatory operator` and no observers = need-to-know: only the operator's
@@ -18,3 +21,9 @@ template RegistryState
     financed : Set Text
   where
     signatory operator
+
+-- | Compare-and-set for the Single-Pledge index (ADR-03/06): the pure branch the
+--   `Settle` choice will use. `Left AlreadyFinanced` if the hash is already
+--   financed; otherwise `Right` the set with the hash inserted.
+tryRegister : Text -> Set Text -> Either RejectReason (Set Text)
+tryRegister _ financed = Right financed   -- STUB (RED): never rejects, doesn't insert

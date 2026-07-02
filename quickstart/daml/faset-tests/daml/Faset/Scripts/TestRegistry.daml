@@ -1,0 +1,21 @@
+-- | Unit tests for the compare-and-set primitive `tryRegister` (CONTEXT.md ADR-03).
+--   Pure logic that the Settle choice (sprint-03) will branch on. `fmap Set.toList`
+--   normalises the Right to a list so `===` needs only Show/Eq on [Text] + RejectReason.
+module Faset.Scripts.TestRegistry where
+
+import Daml.Script
+import DA.Assert ((===))
+import qualified DA.Set as Set
+
+import Faset.Registry (tryRegister)
+import Faset.Types (RejectReason(..))
+
+-- | Hash absent → inserted, returned as Right.
+test_tryRegister_insertsWhenAbsent : Script ()
+test_tryRegister_insertsWhenAbsent = script do
+  fmap Set.toList (tryRegister "h1" Set.empty) === Right ["h1"]
+
+-- | Hash already present → rejected with Left AlreadyFinanced (set unchanged).
+test_tryRegister_rejectsWhenPresent : Script ()
+test_tryRegister_rejectsWhenPresent = script do
+  fmap Set.toList (tryRegister "h1" (Set.fromList ["h1"])) === Left AlreadyFinanced
