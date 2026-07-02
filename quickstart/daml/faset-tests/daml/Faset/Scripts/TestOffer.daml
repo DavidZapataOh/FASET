@@ -6,6 +6,7 @@ module Faset.Scripts.TestOffer where
 
 import Daml.Script
 import DA.Assert ((===))
+import DA.Optional (isNone)
 
 import Faset.Offer (FinancingOffer(..), Accept(..))
 import Faset.Scripts.Setup (allocFasetParties)
@@ -24,3 +25,31 @@ test_acceptCreatesAgreement = script do
   Some ag <- queryContractId supplier agCid
   ag.winningFinancier === financierA
   ag.advance === 900.0
+
+-- | Test 11 (offer privacy, ADR-10 / §6): the only stakeholders of a FinancingOffer
+--   are {financier, supplier}, so a LOSING offer is invisible to both the operator
+--   (the clearing venue sees no offers) and to a rival financier (blind competition).
+--   Two offers for the same invoice; neither operator nor B can read A's offer.
+test_losingOfferInvisibleToOperatorAndRival : Script ()
+test_losingOfferInvisibleToOperatorAndRival = script do
+  (operator, supplier, financierA, financierB, _) <- allocFasetParties
+  offerA <- submit financierA $ createCmd FinancingOffer with
+    financier = financierA
+    supplier = supplier
+    invoiceHash = "h1"
+    rate = 0.10
+    advance = 900.0
+  offerB <- submit financierB $ createCmd FinancingOffer with
+    financier = financierB
+    supplier = supplier
+    invoiceHash = "h1"
+    rate = 0.12
+    advance = 880.0
+  -- the operator (clearing venue) sees NO offers
+  mOpA <- queryContractId operator offerA
+  assertMsg "operator (venue) must NOT see A's offer" (isNone mOpA)
+  mOpB <- queryContractId operator offerB
+  assertMsg "operator (venue) must NOT see B's offer" (isNone mOpB)
+  -- a rival financier cannot read A's offer (blind competition)
+  mBA <- queryContractId financierB offerA
+  assertMsg "rival financierB must NOT see A's offer" (isNone mBA)
