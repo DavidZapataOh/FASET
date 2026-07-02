@@ -8,14 +8,55 @@ module Faset.Scripts.TestRegulator where
 import Daml.Script
 import DA.Assert ((===))
 import DA.Optional (isNone)
+import DA.Time (addRelTime, days)
 import qualified DA.Set as Set
 
 import Faset.Registry (RegistryState(..))
 import Faset.Registration (Registration(..), GrantRegulatorView(..))
-import Faset.Cash (CashHolding(..))
+import Faset.Cash (CashHolding(..), CashLock(..))
+import Faset.Invoice (Invoice(..))
+import Faset.Regulator (RegulatorMandate(..))
 import Faset.Settlement (InvoiceSettlementAuthorization(..), Settle(..))
 import Faset.Scripts.Setup (allocFasetParties)
 import Faset.Scripts.TestSettleSetup (setupDeal)
+
+-- | Settle one deal against the operator's CURRENT RegistryState (queried fresh so
+--   consecutive calls chain), with a distinct invoiceHash. `mandate = Some mc` makes
+--   the resulting Registration already observe the regulator (the "future" book).
+settleDeal
+  :  Party -> Party -> Party
+  -> Text -> Decimal -> Decimal
+  -> Optional (ContractId RegulatorMandate)
+  -> Script ()
+settleDeal operator supplier financier invoiceHash faceValue advance mandate = script do
+  now <- getTime
+  [(rsCid, _)] <- query @RegistryState operator
+  inv <- submit supplier $ createCmd Invoice with
+    supplier = supplier
+    invoiceHash = invoiceHash
+    faceValue = faceValue
+    dueDate = addRelTime now (days 30)
+    currency = "COP"
+  h <- submit financier $ createCmd CashHolding with owner = financier, amount = faceValue
+  lock <- submit financier $ createCmd CashLock with
+    financier = financier
+    operator = operator
+    supplier = supplier
+    amount = advance
+    holdingCid = h
+  auth <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financier
+    invoiceHash = invoiceHash
+    expectedAdvance = advance
+  Some invDisc <- queryDisclosure supplier inv
+  Some hDisc <- queryDisclosure financier h
+  submit (actAs operator <> discloseMany [invDisc, hDisc]) $ exerciseCmd auth Settle with
+    registryStateCid = rsCid
+    cashLockCid = lock
+    invoiceCid = inv
+    regulatorMandateCid = mandate
 
 -- | Pre-grant the regulator cannot read the Registration; after
 --   GrantRegulatorView it can, and the recreated record keeps the original settledAt.
@@ -110,3 +151,47 @@ test_grantToRegulatorDoesNotExposeToRival = script do
   length regsReg === 1
   regsB <- query @Registration financierB
   length regsB === 0
+
+-- | Test 8 (regulator sees PAST + FUTURE, §6 / ADR-09): the operator grants a
+--   pre-mandate Registration (the past book) AND, once a RegulatorMandate exists, new
+--   settlements auto-observe the regulator (the future book). Two deals (distinct
+--   hashes) → the regulator reads both.
+test_regulatorSeesPastAndFuture : Script ()
+test_regulatorSeesPastAndFuture = script do
+  (operator, supplier, financierA, _, regulator) <- allocFasetParties
+  _ <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  -- (a) PAST: settle deal 1 WITHOUT a mandate → Registration r1 (disclosedTo = []).
+  settleDeal operator supplier financierA "hash-1" 1000.0 900.0 None
+  -- operator creates the mandate and grants the PAST record to the regulator.
+  mandateCid <- submit operator $ createCmd RegulatorMandate with
+    operator = operator
+    regulator = regulator
+  [(r1Cid, _)] <- query @Registration operator
+  _ <- submit operator $ exerciseCmd r1Cid GrantRegulatorView with
+    regulator = regulator
+  -- (b) FUTURE: settle deal 2 WITH the mandate → r2 already observes the regulator.
+  settleDeal operator supplier financierA "hash-2" 2000.0 1800.0 (Some mandateCid)
+  -- the regulator now sees BOTH: the granted past (r1) + the auto future (r2).
+  regs <- query @Registration regulator
+  length regs === 2
+
+-- | Test 10 (settledAt preserved, §6 / ADR-09): the grant is an archive-and-recreate
+--   that must keep the ORIGINAL settlement time — the regulator sees when the deal
+--   settled, not when the operator granted the view (which happens a day later here).
+test_grantPreservesSettledAt : Script ()
+test_grantPreservesSettledAt = script do
+  (operator, supplier, financierA, _, regulator) <- allocFasetParties
+  _ <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  settleDeal operator supplier financierA "hash-1" 1000.0 900.0 None
+  [(r1Cid, _)] <- query @Registration operator
+  Some rBefore <- queryContractId operator r1Cid
+  let originalSettledAt = rBefore.settledAt
+  passTime (days 1)   -- the grant happens a day AFTER settlement
+  _ <- submit operator $ exerciseCmd r1Cid GrantRegulatorView with
+    regulator = regulator
+  [(_, rAfter)] <- query @Registration regulator
+  rAfter.settledAt === originalSettledAt
