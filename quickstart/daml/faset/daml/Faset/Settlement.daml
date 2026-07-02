@@ -1,0 +1,51 @@
+-- | The supplier's settlement delegation + the atomic `Settle` choice
+--   (CONTEXT.md ADR-06/07, §2). The supplier signs `InvoiceSettlementAuthorization`
+--   and delegates to the operator (the sole controller of `Settle`) the authority to
+--   run the settlement. This is what makes {supplier, operator} the authority of
+--   `Settle` while keeping the operator the ONLY submitter (ADR-07) — a financier or
+--   supplier submitting would need `RegistryState` revealed and would break the moat.
+--   The financier's authority does NOT enter `Settle`, so delivery is a REGISTRAL
+--   cession (archive Invoice + operator-signed Registration), not a financier token.
+--   NO contract keys (Daml 3.4.11 / LF 2.x); the cids are passed as choice args.
+module Faset.Settlement where
+
+import qualified DA.Set as Set
+
+import Faset.Registry (RegistryState(..))
+import Faset.Cash (CashLock)
+import Faset.Invoice (Invoice)
+
+-- | Supplier-signed delegation carrying the `invoiceHash` it authorizes and the
+--   `expectedAdvance` (fairness floor the success branch will assert, ADR-06).
+--   `observer operator` so the operator can find and exercise `Settle`.
+template InvoiceSettlementAuthorization
+  with
+    supplier : Party
+    operator : Party
+    winningFinancier : Party
+    invoiceHash : Text
+    expectedAdvance : Decimal
+  where
+    signatory supplier
+    observer operator
+
+    -- | Atomic settlement. Controller = operator (ADR-07: only the operator submits).
+    --   Order (ADR-06): fetch RegistryState, check the hash FIRST; the Invoice is
+    --   only fetched/archived in the success branch (so a double-Settle after the
+    --   invoice is already archived still falls cleanly into rejection — test 12).
+    --   SHELL: both branches are stubs here; task 03 fills the success branch
+    --   (registry compare-and-set + cash leg + registral cession + Registration),
+    --   task 05 fills the rejection branch (RegistrationRejected). The
+    --   `regulatorMandateCid : Optional (ContractId RegulatorMandate)` arg is added
+    --   in sprint-05 as a contained change (RegulatorMandate does not exist yet).
+    choice Settle : ()
+      with
+        registryStateCid : ContractId RegistryState
+        cashLockCid : ContractId CashLock
+        invoiceCid : ContractId Invoice
+      controller operator
+      do
+        rs <- fetch registryStateCid
+        if invoiceHash `Set.member` rs.financed
+          then pure ()   -- STUB rejection branch (real in task 05)
+          else pure ()   -- STUB success branch (real in task 03)
