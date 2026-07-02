@@ -13,8 +13,9 @@ import DA.Optional (isNone)
 import qualified DA.Set as Set
 
 import Faset.Registry (RegistryState(..))
-import Faset.Registration (Registration(..))
-import Faset.Cash (CashHolding(..))
+import Faset.Registration (Registration(..), RegistrationRejected(..))
+import Faset.Cash (CashHolding(..), CashLock(..))
+import Faset.Types (RejectReason(..))
 import Faset.Settlement (InvoiceSettlementAuthorization(..), Settle(..))
 import Faset.Scripts.TestSettleSetup (setupDeal)
 
@@ -133,3 +134,109 @@ test_settleInsufficientFundsRevertsHash = script do
   Some _ <- queryContractId supplier invCid                          -- invoice still active
   supHoldings <- query @CashHolding supplier
   length (filter (\(_, h) -> h.amount == 900.0) supHoldings) === 0   -- cash not moved
+
+-- | Test 6 (double-Settle, §6 / ADR-06 / ADR-10): a fraudulent supplier closes with
+--   A (settles) then B for the SAME invoiceHash. B's Settle hits the membership gate
+--   (hash already financed) → RegistrationRejected, blind ("AlreadyFinanced" only).
+--   Exactly ONE Registration (A's), and the cash moved exactly ONCE.
+test_doubleSettleRejectsSecond : Script ()
+test_doubleSettleRejectsSecond = script do
+  (operator, supplier, financierA, financierB, invCid, lockACid, ih) <- setupDeal 1000.0 900.0
+  rs0 <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authA <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  -- A settles (success path → needs Invoice + CashHolding disclosed to the operator).
+  Some invDisc <- queryDisclosure supplier invCid
+  [(hAcid, _)] <- query @CashHolding financierA
+  Some hADisc <- queryDisclosure financierA hAcid
+  submit (actAs operator <> discloseMany [invDisc, hADisc]) $ exerciseCmd authA Settle with
+    registryStateCid = rs0
+    cashLockCid = lockACid
+    invoiceCid = invCid
+  -- B: own holding + lock, and a fraudulent authorization for the SAME invoiceHash.
+  hB <- submit financierB $ createCmd CashHolding with owner = financierB, amount = 1000.0
+  lockB <- submit financierB $ createCmd CashLock with
+    financier = financierB
+    operator = operator
+    supplier = supplier
+    amount = 900.0
+    holdingCid = hB
+  authB <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierB
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  -- Fresh RegistryState cid (A recreated it). B's Settle is rejected at the gate; the
+  -- reject branch fetches ONLY RegistryState → no disclosures, invCid never fetched.
+  [(rsNowCid, _)] <- query @RegistryState operator
+  submit operator $ exerciseCmd authB Settle with
+    registryStateCid = rsNowCid
+    cashLockCid = lockB
+    invoiceCid = invCid
+  -- B is blindly rejected; A alone won; cash moved once.
+  [(_, rej)] <- query @RegistrationRejected operator
+  rej.financier === financierB
+  rej.reason === AlreadyFinanced
+  regs <- query @Registration operator
+  length regs === 1
+  supHoldings <- query @CashHolding supplier
+  length (filter (\(_, h) -> h.amount == 900.0) supHoldings) === 1
+
+-- | Test 12 (double-Settle with the Invoice ALREADY archived, §6 / ADR-06): after A
+--   cedes (archives) the invoice, B's Settle for the same hash must fall into
+--   RegistrationRejected CLEANLY — the `submit` SUCCEEDS, it does NOT throw a
+--   contract-not-found. This holds only because membership gates BEFORE any Invoice
+--   fetch (the reject branch never touches the archived invoice). This is the
+--   demo-breaker if it regresses to a contract error instead of "AlreadyFinanced".
+test_settleWithArchivedInvoiceRejectsCleanly : Script ()
+test_settleWithArchivedInvoiceRejectsCleanly = script do
+  (operator, supplier, financierA, financierB, invCid, lockACid, ih) <- setupDeal 1000.0 900.0
+  rs0 <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authA <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  Some invDisc <- queryDisclosure supplier invCid
+  [(hAcid, _)] <- query @CashHolding financierA
+  Some hADisc <- queryDisclosure financierA hAcid
+  submit (actAs operator <> discloseMany [invDisc, hADisc]) $ exerciseCmd authA Settle with
+    registryStateCid = rs0
+    cashLockCid = lockACid
+    invoiceCid = invCid
+  -- Precondition: A's invoice is now archived (ceded).
+  mInv <- queryContractId supplier invCid
+  assertMsg "precondition: A's invoice must be archived" (isNone mInv)
+  -- B attempts with the SAME (now archived) invoiceCid.
+  hB <- submit financierB $ createCmd CashHolding with owner = financierB, amount = 1000.0
+  lockB <- submit financierB $ createCmd CashLock with
+    financier = financierB
+    operator = operator
+    supplier = supplier
+    amount = 900.0
+    holdingCid = hB
+  authB <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierB
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  [(rsNowCid, _)] <- query @RegistryState operator
+  -- KEY: this SUCCEEDS (no contract-not-found) — the reject branch gates on the hash
+  -- BEFORE any Invoice fetch, so the archived invoiceCid is never dereferenced.
+  submit operator $ exerciseCmd authB Settle with
+    registryStateCid = rsNowCid
+    cashLockCid = lockB
+    invoiceCid = invCid
+  rejs <- query @RegistrationRejected operator
+  length (filter (\(_, r) -> r.financier == financierB) rejs) === 1
