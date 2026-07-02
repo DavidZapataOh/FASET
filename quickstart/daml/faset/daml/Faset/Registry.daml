@@ -1,0 +1,20 @@
+-- | The Single-Pledge Registry index (CONTEXT.md ADR-03).
+--   Operator-owned with NO observers → structurally invisible to everyone but
+--   the operator; this is what makes a rival financier unable to read it (test 1).
+--   Uniqueness logic (`tryRegister`) lands in sprint-02; this task ships only the
+--   minimal template that the no-leak invariant guards.
+--   NO contract keys — unavailable in Daml 3.4.11 / LF 2.x (confirmed by compiler);
+--   uniqueness is enforced by operator serialisation, not keys.
+module Faset.Registry where
+
+import DA.Set (Set)
+
+-- | The single, serialising index of already-financed invoice hashes.
+--   `signatory operator` and no observers = need-to-know: only the operator's
+--   node ever holds it.
+template RegistryState
+  with
+    operator : Party
+    financed : Set Text
+  where
+    signatory operator
