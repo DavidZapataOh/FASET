@@ -1,0 +1,30 @@
+-- | Domain assertion for ADR-04 / §6 test 13: the on-ledger IDENTITY of an Invoice is
+--   its `invoiceHash` — the deterministic pseudonym (a SHA-256 hex digest; here H1 from
+--   common/invoice-hash-vectors.json) — and there is NO raw-CUFE field at all: the
+--   Invoice type does not have one, so the compiler makes storing a CUFE impossible.
+--   The repo guard scripts/guard-no-cufe.sh backs this at the source level (no CUFE in
+--   Daml code). Together: the fiscal id stays off-ledger; only the hash is on-ledger.
+module Faset.Scripts.TestNoCufe where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.Time (addRelTime, days)
+
+import Faset.Invoice (Invoice(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+test_invoiceIdentityIsHashNotCufe : Script ()
+test_invoiceIdentityIsHashNotCufe = script do
+  (_, supplier, _, _, _) <- allocFasetParties
+  now <- getTime
+  -- H1: the invoiceHash of vector 1 in common/invoice-hash-vectors.json.
+  let h1 = "ee26f839dd4168a81702a1fb478aa0445cd72dfaf7bed333c9b8371a2d8b4131"
+  invCid <- submit supplier $ createCmd Invoice with
+    supplier = supplier
+    invoiceHash = h1
+    faceValue = 1000.0
+    dueDate = addRelTime now (days 30)
+    currency = "COP"
+  Some inv <- queryContractId supplier invCid
+  -- the on-ledger identity IS the hash pseudonym, verbatim.
+  inv.invoiceHash === h1
