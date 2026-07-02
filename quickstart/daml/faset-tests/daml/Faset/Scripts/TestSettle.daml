@@ -95,3 +95,41 @@ test_settleHappyPath = script do
   [(_, rs)] <- query @RegistryState operator
   assertMsg "invoiceHash must be registered in RegistryState.financed"
     (Set.member ih rs.financed)
+
+-- | Test 5 (atomicity, ADR-06 / §6): a Settle whose cash leg fails on insufficient
+--   funds reverts the WHOLE transaction — including the registry hash inserted in
+--   step (iii) BEFORE the cash execute (iv). This proves insert-then-revert
+--   atomicity (never a "burnt hash"), not mere pre-check ordering: funded 500 <
+--   advance 900, but fairness (900 >= expectedAdvance 900) passes, so the hash IS
+--   inserted, then CashLock_Execute throws (holding 500 < 900) → full rollback.
+--   Real sufficiency is checked ONLY inside CashLock_Execute (vs holding.amount),
+--   never in the Settle body — otherwise this test would pass trivially.
+test_settleInsufficientFundsRevertsHash : Script ()
+test_settleInsufficientFundsRevertsHash = script do
+  (operator, supplier, financierA, _, invCid, lockCid, ih) <- setupDeal 500.0 900.0
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authCid <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  Some invDisc <- queryDisclosure supplier invCid
+  [(holdingCid, _)] <- query @CashHolding financierA
+  Some holdingDisc <- queryDisclosure financierA holdingCid
+  -- The settle MUST fail: the cash execute throws on insufficient funds (iv).
+  submitMustFail (actAs operator <> discloseMany [invDisc, holdingDisc]) $
+    exerciseCmd authCid Settle with
+      registryStateCid = rsCid
+      cashLockCid = lockCid
+      invoiceCid = invCid
+  -- Full rollback — nothing persisted:
+  [(_, rs)] <- query @RegistryState operator
+  Set.member ih rs.financed === False                                -- hash NOT burnt
+  regs <- query @Registration operator
+  length regs === 0                                                  -- no Registration
+  Some _ <- queryContractId supplier invCid                          -- invoice still active
+  supHoldings <- query @CashHolding supplier
+  length (filter (\(_, h) -> h.amount == 900.0) supHoldings) === 0   -- cash not moved
