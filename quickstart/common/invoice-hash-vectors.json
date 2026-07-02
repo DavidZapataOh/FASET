@@ -1,0 +1,15 @@
+[
+  {
+    "cufe": "8f2a1c9b4d7e6053a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718",
+    "invoiceHash": "ee26f839dd4168a81702a1fb478aa0445cd72dfaf7bed333c9b8371a2d8b4131"
+  },
+  {
+    "cufe": "  8f2a1c9b4d7e6053a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718  ",
+    "invoiceHash": "ee26f839dd4168a81702a1fb478aa0445cd72dfaf7bed333c9b8371a2d8b4131",
+    "note": "whitespace variant of vector 1 -> SAME hash (proves canonical() trims)"
+  },
+  {
+    "cufe": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+    "invoiceHash": "35ab52a17f6ba835f9243d9fd1549534ff663ce66f30660022f47c004be622bd"
+  }
+]
