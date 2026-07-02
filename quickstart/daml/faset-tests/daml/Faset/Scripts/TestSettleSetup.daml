@@ -1,0 +1,54 @@
+-- | Settle scaffolding: builds a real deal (Invoice + in-model CashHolding/CashLock)
+--   that the atomic two-branch `Settle` tests (5, 6, 12) will drive in later tasks.
+--   `setupDeal` is parametrized by `funded` (the financier's CashHolding balance) and
+--   `advance` (the CashLock amount) precisely so task 04 can create funded < advance to
+--   force the insufficient-funds revert (test 5). Cash here is REAL on-ledger state
+--   (signed ledger contracts), NOT a mock; sprint-07 upgrades it to Amulet (ADR-08).
+--   The raw CUFE is NEVER on-ledger — the Invoice carries `invoiceHash` (ADR-04).
+module Faset.Scripts.TestSettleSetup where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.Time (addRelTime, days)
+
+import Faset.Invoice (Invoice(..))
+import Faset.Cash (CashHolding(..), CashLock(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+-- | Build one financing deal ready for `Settle`.
+--   @funded@  = balance of the financier's CashHolding.
+--   @advance@ = amount committed in the CashLock (financier → supplier at settle).
+--   Returns @(operator, supplier, financierA, financierB, invoiceCid, cashLockCid, invoiceHash)@.
+setupDeal
+  :  Decimal
+  -> Decimal
+  -> Script (Party, Party, Party, Party, ContractId Invoice, ContractId CashLock, Text)
+setupDeal funded advance = script do
+  (operator, supplier, financierA, financierB, _regulator) <- allocFasetParties
+  now <- getTime
+  let ih = "hash-1"
+  invCid <- submit supplier $ createCmd Invoice with
+    supplier = supplier
+    invoiceHash = ih
+    faceValue = 1000.0
+    dueDate = addRelTime now (days 30)
+    currency = "COP"
+  holdingCid <- submit financierA $ createCmd CashHolding with
+    owner = financierA
+    amount = funded
+  lockCid <- submit financierA $ createCmd CashLock with
+    financier = financierA
+    operator = operator
+    supplier = supplier
+    amount = advance
+    holdingCid = holdingCid
+  pure (operator, supplier, financierA, financierB, invCid, lockCid, ih)
+
+-- | The deal scaffolding creates the Invoice and CashLock with the expected economics.
+test_setupDealCreates : Script ()
+test_setupDealCreates = script do
+  (_, supplier, financierA, _, invCid, lockCid, _) <- setupDeal 1000.0 900.0
+  Some inv  <- queryContractId supplier invCid
+  Some lock <- queryContractId financierA lockCid
+  inv.faceValue === 1000.0
+  lock.amount === 900.0
