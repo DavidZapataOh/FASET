@@ -9,6 +9,7 @@ import DA.Optional (isNone)
 import qualified DA.Set as Set
 
 import Faset.Registry (RegistryState(..))
+import Faset.Registration (Registration(..))
 import Faset.Scripts.Setup (allocFasetParties)
 
 -- | Test 1 — the operator-owned Single-Pledge index (`RegistryState`) is
@@ -21,3 +22,22 @@ test_registryStateNotVisibleToRival = script do
     financed = Set.empty
   mRs <- queryContractId financierB rsCid
   assertMsg "FinancierB (rival) must NOT see RegistryState" (isNone mRs)
+
+-- | Test 2 — the winner's Registration (its economics: faceValue/advance/rate)
+--   is invisible to a rival financier: querying it AS FinancierB returns None.
+--   Registration observers are {winningFinancier, supplier} only — never a rival.
+test_winnerRegistrationNotVisibleToRival : Script ()
+test_winnerRegistrationNotVisibleToRival = script do
+  (operator, supplier, financierA, financierB, _) <- allocFasetParties
+  now <- getTime
+  regCid <- submit operator $ createCmd Registration with
+    operator = operator
+    winningFinancier = financierA
+    supplier = supplier
+    invoiceHash = "hash-A"
+    faceValue = 1000.0
+    advance = 900.0
+    rate = 0.10
+    settledAt = now
+  mReg <- queryContractId financierB regCid
+  assertMsg "FinancierB (rival) must NOT see the winner's Registration" (isNone mReg)
