@@ -26,4 +26,7 @@ template RegistryState
 --   `Settle` choice will use. `Left AlreadyFinanced` if the hash is already
 --   financed; otherwise `Right` the set with the hash inserted.
 tryRegister : Text -> Set Text -> Either RejectReason (Set Text)
-tryRegister _ financed = Right financed   -- STUB (RED): never rejects, doesn't insert
+tryRegister hash financed =
+  if hash `Set.member` financed
+    then Left AlreadyFinanced
+    else Right (Set.insert hash financed)
