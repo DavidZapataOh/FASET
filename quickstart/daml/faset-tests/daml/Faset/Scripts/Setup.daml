@@ -1,0 +1,18 @@
+-- | Test-only helpers for the FASET no-leak scripts: allocates the core parties.
+module Faset.Scripts.Setup where
+
+import Daml.Script
+
+-- | Allocate the five core FASET parties.
+--   Returns @(operator, supplier, financierA, financierB, regulator)@.
+--   NOTE: uses `allocateParty` from Daml.Script's prelude — do NOT import
+--   `Splice.Testing.Utils` (allocatePartyExact) until sprint-07 (its data-dep
+--   is not on faset-tests before then).
+allocFasetParties : Script (Party, Party, Party, Party, Party)
+allocFasetParties = script do
+  operator   <- allocateParty "operator"
+  supplier   <- allocateParty "supplier"
+  financierA <- allocateParty "financierA"
+  financierB <- allocateParty "financierB"
+  regulator  <- allocateParty "regulator"
+  pure (operator, supplier, financierA, financierB, regulator)

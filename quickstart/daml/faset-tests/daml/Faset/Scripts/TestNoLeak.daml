@@ -1,0 +1,23 @@
+-- | No-leak invariant tests: a rival financier can never read another party's
+--   registry/registration state — the FASET moat (CONTEXT.md §6, tests 1 & 2).
+--   These use per-party `queryContractId`, which respects ledger visibility, so
+--   they are a REAL partition test, not a mock.
+module Faset.Scripts.TestNoLeak where
+
+import Daml.Script
+import DA.Optional (isNone)
+import qualified DA.Set as Set
+
+import Faset.Registry (RegistryState(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+-- | Test 1 — the operator-owned Single-Pledge index (`RegistryState`) is
+--   invisible to a rival financier: querying it AS FinancierB returns None.
+test_registryStateNotVisibleToRival : Script ()
+test_registryStateNotVisibleToRival = script do
+  (operator, _, _, financierB, _) <- allocFasetParties
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  mRs <- queryContractId financierB rsCid
+  assertMsg "FinancierB (rival) must NOT see RegistryState" (isNone mRs)
