@@ -10,7 +10,7 @@
 module Faset.Settlement where
 
 import Faset.Registry (RegistryState(..), tryRegister)
-import Faset.Registration (Registration(..))
+import Faset.Registration (Registration(..), RegistrationRejected(..))
 import Faset.Cash (CashHolding(..), CashLock(..), CashLock_Execute(..))
 import Faset.Invoice (Invoice(..))
 import Faset.Types (RejectReason(..))
@@ -49,9 +49,19 @@ template InvoiceSettlementAuthorization
         -- GATE (ADR-06): membership FIRST, via the unit-tested compare-and-set
         -- primitive. The rejection branch must not touch the Invoice (test 12).
         case tryRegister invoiceHash rs.financed of
-          Left AlreadyFinanced ->
-            -- STUB rejection branch (real in task 05: create RegistrationRejected).
-            -- Deliberately does NOT fetch the Invoice.
+          Left AlreadyFinanced -> do
+            -- Rejection branch: record the blind rejection ONLY. It does NOT fetch
+            -- the Invoice, recreate RegistryState, or touch cash — so a double-Settle
+            -- after the invoice is already archived rejects cleanly at the gate, with
+            -- no contract-not-found (test 12). The financier learns only
+            -- "AlreadyFinanced", never the winner's identity/amount/rate (test 6).
+            now <- getTime
+            _ <- create RegistrationRejected with
+              operator = operator
+              financier = winningFinancier
+              invoiceHash = invoiceHash
+              reason = AlreadyFinanced
+              attemptedAt = now
             pure ()
           Right financed' -> do
             -- (i) invoiceHash guard + (ii) fairness guard — fail-fast BEFORE mutating.
