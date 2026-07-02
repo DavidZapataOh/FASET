@@ -24,15 +24,15 @@ template FinancingOffer
     choice Accept : ContractId FinancingAgreement
       controller supplier
       do
-        -- STUB (not yet correct): a placeholder agreement so the module compiles.
-        -- The real mapping (winningFinancier = financier, advance from the offer)
-        -- lands in GREEN. Wrong values here → test_acceptCreatesAgreement fails.
+        -- Bind the offer's economics into the agreement. winningFinancier = the
+        -- offer's financier; its authority to co-sign the agreement comes from being
+        -- the signatory of this offer.
         create FinancingAgreement with
           supplier = supplier
-          winningFinancier = supplier
+          winningFinancier = financier
           invoiceHash = invoiceHash
           rate = rate
-          advance = 0.0
+          advance = advance
 
 -- | The accepted deal's terms. `signatory supplier, winningFinancier`; the operator
 --   is deliberately NOT a stakeholder (threat-model test 4, sprint-06).

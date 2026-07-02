@@ -7,7 +7,7 @@ module Faset.Scripts.TestOffer where
 import Daml.Script
 import DA.Assert ((===))
 
-import Faset.Offer (FinancingOffer(..), FinancingAgreement(..), Accept(..))
+import Faset.Offer (FinancingOffer(..), Accept(..))
 import Faset.Scripts.Setup (allocFasetParties)
 
 -- | Accepting an offer creates the agreement with the offer's winner and advance.
