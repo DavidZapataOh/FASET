@@ -8,10 +8,13 @@
 module Faset.Scripts.TestSettle where
 
 import Daml.Script
+import DA.Assert ((===))
 import DA.Optional (isNone)
 import qualified DA.Set as Set
 
 import Faset.Registry (RegistryState(..))
+import Faset.Registration (Registration(..))
+import Faset.Cash (CashHolding(..))
 import Faset.Settlement (InvoiceSettlementAuthorization(..), Settle(..))
 import Faset.Scripts.TestSettleSetup (setupDeal)
 
@@ -43,3 +46,41 @@ test_onlyOperatorSettlesAndConsumesAuth = script do
     invoiceCid = invCid
   mAuth <- queryContractId supplier authCid
   assertMsg "Settle must consume the InvoiceSettlementAuthorization" (isNone mAuth)
+
+-- | Happy path (atomic DvP, ADR-06 success branch / ADR-07 economics): a clean
+--   Settle registers the hash, moves the advance to the supplier as cash, cedes
+--   the invoice (archive), and records the winner's economics in a Registration.
+--   All in one transaction — the cash create (supplier authority) and the source
+--   archive (financier authority, inside CashLock_Execute) commit atomically.
+test_settleHappyPath : Script ()
+test_settleHappyPath = script do
+  (operator, supplier, financierA, _, invCid, lockCid, ih) <- setupDeal 1000.0 900.0
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authCid <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  submit operator $ exerciseCmd authCid Settle with
+    registryStateCid = rsCid
+    cashLockCid = lockCid
+    invoiceCid = invCid
+  -- (vi) Registration records the winner's economics (advance / winner / derived rate).
+  [(_, reg)] <- query @Registration operator
+  reg.advance === 900.0
+  reg.winningFinancier === financierA
+  reg.rate === 0.1   -- (faceValue - advance)/faceValue = (1000 - 900)/1000
+  -- cash leg: the supplier now holds the 900 advance.
+  supHoldings <- query @CashHolding supplier
+  assertMsg "supplier must hold the 900 advance as cash"
+    (any (\(_, h) -> h.amount == 900.0) supHoldings)
+  -- (v) registral cession: the invoice is archived (ceded away from the supplier).
+  mInv <- queryContractId supplier invCid
+  assertMsg "invoice must be archived (registral cession)" (isNone mInv)
+  -- (iii) the hash is now in the Single-Pledge index.
+  [(_, rs)] <- query @RegistryState operator
+  assertMsg "invoiceHash must be registered in RegistryState.financed"
+    (Set.member ih rs.financed)
