@@ -42,3 +42,27 @@ gradle-app.setting
 .direnv/
 
 logs
+
+# ── FASET hardening (sprint-03): keep LocalNet/build-generated secrets & artifacts out of git ──
+# Compiled Daml build outputs, incl. compiled faset DARs (daml/**/.daml/dist/*.dar).
+# NOTE: pinned Splice dependency DARs live in daml/dars/ + daml/external-test-dars/
+# (NOT under .daml/) and stay tracked — we do NOT blanket-ignore *.dar.
+**/.daml/
+
+# Real local env overrides holding ACTUAL secrets. The scaffold's committed *.env
+# hold cn-quickstart LocalNet dev placeholders and stay tracked; only *.local do not.
+*.env.local
+**/*.env.local
+.env.*.local
+
+# Crypto material & tokens LocalNet/Canton may generate into the tree at runtime
+# (participant keys, keystores, JWTs, onboarding tokens) — never commit these.
+**/*.pem
+**/*.key
+**/*.p12
+**/*.jks
+**/*.keystore
+**/*.jwt
+**/canton-data/
+**/localnet-data/
+**/*-participant-*/keys/
