@@ -1,0 +1,39 @@
+-- | Post-settlement records of the Single-Pledge Registry (CONTEXT.md §2, ADR-07).
+--   Both templates are operator-signed: the operator is the clearing venue that
+--   persists the settled deal's economics (DTCC-style). A rival financier is
+--   NEVER a stakeholder → the winner's terms stay invisible to competitors
+--   (tests 2 & 3). NO contract keys.
+module Faset.Registration where
+
+import Faset.Types (RejectReason)
+
+-- | A settled financing: the operator-held ownership + audit record.
+--   Economics (faceValue/advance/rate) live HERE, not in `RegistryState`.
+--   Observers are the winning financier and the supplier only — never a rival.
+template Registration
+  with
+    operator : Party
+    winningFinancier : Party
+    supplier : Party
+    invoiceHash : Text
+    faceValue : Decimal
+    advance : Decimal
+    rate : Decimal
+    settledAt : Time
+  where
+    signatory operator
+    observer winningFinancier, supplier
+
+-- | A blindly-rejected double-financing attempt. Observed only by the financier
+--   who attempted it; `reason` (AlreadyFinanced) is the single public signal —
+--   it never reveals the winner's identity, amount, or rate.
+template RegistrationRejected
+  with
+    operator : Party
+    financier : Party
+    invoiceHash : Text
+    reason : RejectReason
+    attemptedAt : Time
+  where
+    signatory operator
+    observer financier
