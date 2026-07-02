@@ -1,15 +1,20 @@
--- | Post-settlement records of the Single-Pledge Registry (CONTEXT.md §2, ADR-07).
+-- | Post-settlement records of the Single-Pledge Registry (CONTEXT.md §2, ADR-07/09).
 --   Both templates are operator-signed: the operator is the clearing venue that
---   persists the settled deal's economics (DTCC-style). A rival financier is
---   NEVER a stakeholder → the winner's terms stay invisible to competitors
---   (tests 2 & 3). NO contract keys.
+--   persists the settled deal's economics (DTCC-style). A rival financier is NEVER a
+--   stakeholder → the winner's terms stay invisible to competitors (tests 2 & 3).
+--   `disclosedTo` + `GrantRegulatorView` implement the operator-only Grant Regulator
+--   View (ADR-09): archive-and-recreate adding the regulator as an observer, keeping
+--   all fields (incl. settledAt) unchanged. NO contract keys.
 module Faset.Registration where
+
+import DA.List (dedup)
 
 import Faset.Types (RejectReason)
 
--- | A settled financing: the operator-held ownership + audit record.
---   Economics (faceValue/advance/rate) live HERE, not in `RegistryState`.
---   Observers are the winning financier and the supplier only — never a rival.
+-- | A settled financing: the operator-held ownership + audit record. Economics
+--   (faceValue/advance/rate) live HERE, not in `RegistryState`. Observers are the
+--   winning financier and the supplier — never a rival — plus any parties the
+--   operator has granted view to via `disclosedTo` (the regulator).
 template Registration
   with
     operator : Party
@@ -20,13 +25,25 @@ template Registration
     advance : Decimal
     rate : Decimal
     settledAt : Time
+    disclosedTo : [Party]
   where
     signatory operator
-    observer winningFinancier, supplier
+    observer winningFinancier, supplier, disclosedTo
 
--- | A blindly-rejected double-financing attempt. Observed only by the financier
---   who attempted it; `reason` (AlreadyFinanced) is the single public signal —
---   it never reveals the winner's identity, amount, or rate.
+    -- | Operator grants `regulator` a view of this record (ADR-09). Archive-and-
+    --   recreate with the regulator added as an observer; settledAt and every other
+    --   field are PRESERVED (the record reflects the ORIGINAL settlement, test 10).
+    --   Granting to the regulator does NOT add rivals → rival-blindness holds (test 9).
+    choice GrantRegulatorView : ContractId Registration
+      with
+        regulator : Party
+      controller operator
+      do
+        create this with disclosedTo = dedup (regulator :: disclosedTo)
+
+-- | A blindly-rejected double-financing attempt. Observed only by the financier who
+--   attempted it (+ any granted parties); `reason` (AlreadyFinanced) is the single
+--   public signal — never the winner's identity, amount, or rate.
 template RegistrationRejected
   with
     operator : Party
@@ -34,6 +51,16 @@ template RegistrationRejected
     invoiceHash : Text
     reason : RejectReason
     attemptedAt : Time
+    disclosedTo : [Party]
   where
     signatory operator
-    observer financier
+    observer financier, disclosedTo
+
+    -- | Operator grants `regulator` a view of this rejected attempt (ADR-09).
+    --   Distinct choice name from Registration's to avoid a module-level type clash.
+    choice GrantRegulatorViewRejected : ContractId RegistrationRejected
+      with
+        regulator : Party
+      controller operator
+      do
+        create this with disclosedTo = dedup (regulator :: disclosedTo)

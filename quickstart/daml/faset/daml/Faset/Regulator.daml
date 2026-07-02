@@ -1,0 +1,15 @@
+-- | The operator's standing mandate to disclose future settlement records to the
+--   regulator (CONTEXT.md ADR-09, §4). Its presence makes `Settle` create new
+--   `Registration`s already observing the regulator (the "future" book), while the
+--   "past" book is lit by exercising `GrantRegulatorView` on existing records.
+--   `signatory operator`, `observer regulator`; the cid is passed to `Settle`.
+--   NO contract keys (Daml 3.4.11 / LF 2.x).
+module Faset.Regulator where
+
+template RegulatorMandate
+  with
+    operator : Party
+    regulator : Party
+  where
+    signatory operator
+    observer regulator

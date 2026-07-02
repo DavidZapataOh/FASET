@@ -14,6 +14,7 @@ import Faset.Registration (Registration(..), RegistrationRejected(..))
 import Faset.Cash (CashHolding(..), CashLock(..), CashLock_Execute(..))
 import Faset.Invoice (Invoice(..))
 import Faset.Types (RejectReason(..))
+import Faset.Regulator (RegulatorMandate)
 
 -- | Supplier-signed delegation carrying the `invoiceHash` it authorizes and the
 --   `expectedAdvance` (fairness floor the success branch will assert, ADR-06).
@@ -43,6 +44,7 @@ template InvoiceSettlementAuthorization
         registryStateCid : ContractId RegistryState
         cashLockCid : ContractId CashLock
         invoiceCid : ContractId Invoice
+        regulatorMandateCid : Optional (ContractId RegulatorMandate)
       controller operator
       do
         rs <- fetch registryStateCid
@@ -62,6 +64,7 @@ template InvoiceSettlementAuthorization
               invoiceHash = invoiceHash
               reason = AlreadyFinanced
               attemptedAt = now
+              disclosedTo = []
             pure ()
           Right financed' -> do
             -- (i) invoiceHash guard + (ii) fairness guard — fail-fast BEFORE mutating.
@@ -84,7 +87,14 @@ template InvoiceSettlementAuthorization
             -- (v) registral cession: the supplier cedes the invoice by archiving it.
             archive invoiceCid
             -- (vi) operator records the winner's economics + derived rate (ADR-07).
+            --   If a RegulatorMandate is present, the new Registration already observes
+            --   the regulator (the "future" book, ADR-09); otherwise disclosedTo = [].
             now <- getTime
+            regObs <- case regulatorMandateCid of
+              None -> pure []
+              Some mc -> do
+                m <- fetch mc
+                pure [m.regulator]
             _ <- create Registration with
               operator = operator
               winningFinancier = winningFinancier
@@ -94,4 +104,5 @@ template InvoiceSettlementAuthorization
               advance = lock.amount
               rate = (inv.faceValue - lock.amount) / inv.faceValue
               settledAt = now
+              disclosedTo = regObs
             pure ()

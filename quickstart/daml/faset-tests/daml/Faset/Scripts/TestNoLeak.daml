@@ -39,5 +39,6 @@ test_winnerRegistrationNotVisibleToRival = script do
     advance = 900.0
     rate = 0.10
     settledAt = now
+    disclosedTo = []
   mReg <- queryContractId financierB regCid
   assertMsg "FinancierB (rival) must NOT see the winner's Registration" (isNone mReg)

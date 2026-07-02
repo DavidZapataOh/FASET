@@ -40,6 +40,7 @@ test_onlyOperatorSettlesAndConsumesAuth = script do
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
+    regulatorMandateCid = None
   -- The operator (delegated controller) settles. Explicit disclosure: the supplier
   -- discloses the Invoice and the financier the CashHolding to the operator's
   -- submission (actAs stays [operator] → only the operator submits; ADR-07/§0).
@@ -50,6 +51,7 @@ test_onlyOperatorSettlesAndConsumesAuth = script do
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
+    regulatorMandateCid = None
   mAuth <- queryContractId supplier authCid
   assertMsg "Settle must consume the InvoiceSettlementAuthorization" (isNone mAuth)
 
@@ -80,6 +82,7 @@ test_settleHappyPath = script do
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
+    regulatorMandateCid = None
   -- (vi) Registration records the winner's economics (advance / winner / derived rate).
   [(_, reg)] <- query @Registration operator
   reg.advance === 900.0
@@ -126,6 +129,7 @@ test_settleInsufficientFundsRevertsHash = script do
       registryStateCid = rsCid
       cashLockCid = lockCid
       invoiceCid = invCid
+      regulatorMandateCid = None
   -- Full rollback — nothing persisted:
   [(_, rs)] <- query @RegistryState operator
   Set.member ih rs.financed === False                                -- hash NOT burnt
@@ -159,6 +163,7 @@ test_doubleSettleRejectsSecond = script do
     registryStateCid = rs0
     cashLockCid = lockACid
     invoiceCid = invCid
+    regulatorMandateCid = None
   -- B: own holding + lock, and a fraudulent authorization for the SAME invoiceHash.
   hB <- submit financierB $ createCmd CashHolding with owner = financierB, amount = 1000.0
   lockB <- submit financierB $ createCmd CashLock with
@@ -180,6 +185,7 @@ test_doubleSettleRejectsSecond = script do
     registryStateCid = rsNowCid
     cashLockCid = lockB
     invoiceCid = invCid
+    regulatorMandateCid = None
   -- B is blindly rejected; A alone won; cash moved once.
   [(_, rej)] <- query @RegistrationRejected operator
   rej.financier === financierB
@@ -214,6 +220,7 @@ test_settleWithArchivedInvoiceRejectsCleanly = script do
     registryStateCid = rs0
     cashLockCid = lockACid
     invoiceCid = invCid
+    regulatorMandateCid = None
   -- Precondition: A's invoice is now archived (ceded).
   mInv <- queryContractId supplier invCid
   assertMsg "precondition: A's invoice must be archived" (isNone mInv)
@@ -238,5 +245,6 @@ test_settleWithArchivedInvoiceRejectsCleanly = script do
     registryStateCid = rsNowCid
     cashLockCid = lockB
     invoiceCid = invCid
+    regulatorMandateCid = None
   rejs <- query @RegistrationRejected operator
   length (filter (\(_, r) -> r.financier == financierB) rejs) === 1
