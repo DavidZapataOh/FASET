@@ -9,26 +9,39 @@ module Faset.Scripts.TestStructural where
 
 import Daml.Script
 import DA.Optional (isNone)
+import DA.Time (addRelTime, days)
 
 import Faset.Registration (Registration(..))
+import Faset.Invoice (Invoice(..))
+import Faset.Cash (CashHolding(..), CashLock(..))
 import Faset.Offer (FinancingOffer(..), Accept(..))
 import Faset.Scripts.Setup (allocFasetParties)
 
--- | Test 3 — a rival financier reads NEITHER the winner's Registration
---   (advance/faceValue/rate) NOR the winner's FinancingAgreement (rate/advance).
+-- | Test 3 — a rival financier, PRESENT in the auction (financierB is the party that
+--   rebounds in Settle), reads NONE of winner A's economics-bearing contracts: the
+--   Registration (advance/faceValue/rate), the financed Invoice (faceValue), and A's
+--   CashLock (advance). Same DIRECT pattern as tests 1 & 2 — financierB is never a
+--   stakeholder of any of them.
 test_rivalCannotReadWinnerTerms : Script ()
 test_rivalCannotReadWinnerTerms = script do
   (operator, supplier, financierA, financierB, _) <- allocFasetParties
   now <- getTime
-  -- winner A's accepted terms → FinancingAgreement
-  offerA <- submit financierA $ createCmd FinancingOffer with
-    financier = financierA
+  -- the Invoice being financed (carries faceValue)
+  invA <- submit supplier $ createCmd Invoice with
     supplier = supplier
     invoiceHash = "hash-1"
-    rate = 0.10
-    advance = 900.0
-  agA <- submit supplier $ exerciseCmd offerA Accept
-  -- winner A's settled economics → Registration
+    faceValue = 1000.0
+    dueDate = addRelTime now (days 30)
+    currency = "COP"
+  -- A's committed cash (carries the advance)
+  holdA <- submit financierA $ createCmd CashHolding with owner = financierA, amount = 1000.0
+  lockA <- submit financierA $ createCmd CashLock with
+    financier = financierA
+    operator = operator
+    supplier = supplier
+    amount = 900.0
+    holdingCid = holdA
+  -- A's settled economics (advance/faceValue/rate)
   regA <- submit operator $ createCmd Registration with
     operator = operator
     winningFinancier = financierA
@@ -39,14 +52,17 @@ test_rivalCannotReadWinnerTerms = script do
     rate = 0.10
     settledAt = now
     disclosedTo = []
-  -- the rival financierB reads NEITHER
+  -- PRINCIPAL: the rival financierB reads NONE of the three winner-economics contracts.
   mRegB <- queryContractId financierB regA
-  assertMsg "rival must NOT read the winner's Registration" (isNone mRegB)
-  mAgB <- queryContractId financierB agA
-  assertMsg "rival must NOT read the winner's FinancingAgreement" (isNone mAgB)
-  -- positive controls: the winner DOES see both → the None results are true negatives.
+  assertMsg "rival must NOT read the winner's Registration (advance/faceValue/rate)" (isNone mRegB)
+  mInvB <- queryContractId financierB invA
+  assertMsg "rival must NOT read the financed Invoice (faceValue)" (isNone mInvB)
+  mLockB <- queryContractId financierB lockA
+  assertMsg "rival must NOT read the winner's CashLock (advance)" (isNone mLockB)
+  -- (additional) positive controls: the legitimate stakeholders DO see their contracts.
   Some _ <- queryContractId financierA regA
-  Some _ <- queryContractId financierA agA
+  Some _ <- queryContractId supplier invA
+  Some _ <- queryContractId financierA lockA
   pure ()
 
 -- | Test 4 — the operator is NEVER a stakeholder of the FinancingAgreement (the terms
