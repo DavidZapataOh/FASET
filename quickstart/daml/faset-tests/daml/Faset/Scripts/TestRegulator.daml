@@ -1,0 +1,40 @@
+-- | Grant Regulator View mechanic (CONTEXT.md ADR-09, §4). The operator grants the
+--   regulator a view of an operator-signed record by archive-and-recreate, adding the
+--   regulator as an observer while PRESERVING settledAt (the record reflects the
+--   ORIGINAL settlement, not the grant time — test 10 core). Pre-grant the regulator
+--   is blind; the grant does not weaken rival-blindness (test 9, later task).
+module Faset.Scripts.TestRegulator where
+
+import Daml.Script
+import DA.Assert ((===))
+import DA.Optional (isNone)
+
+import Faset.Registration (Registration(..), GrantRegulatorView(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+-- | Pre-grant the regulator cannot read the Registration; after
+--   GrantRegulatorView it can, and the recreated record keeps the original settledAt.
+test_grantAddsRegulatorPreservingSettledAt : Script ()
+test_grantAddsRegulatorPreservingSettledAt = script do
+  (operator, supplier, financierA, _, regulator) <- allocFasetParties
+  now <- getTime
+  regCid <- submit operator $ createCmd Registration with
+    operator = operator
+    winningFinancier = financierA
+    supplier = supplier
+    invoiceHash = "hash-A"
+    faceValue = 1000.0
+    advance = 900.0
+    rate = 0.10
+    settledAt = now
+    disclosedTo = []
+  -- pre-grant: the regulator is blind to the Registration
+  mPre <- queryContractId regulator regCid
+  assertMsg "pre-grant: regulator must NOT see the Registration" (isNone mPre)
+  -- operator grants the regulator view (archive-and-recreate)
+  regCid2 <- submit operator $ exerciseCmd regCid GrantRegulatorView with
+    regulator = regulator
+  -- post-grant: the regulator now sees the recreated record, settledAt PRESERVED
+  Some reg <- queryContractId regulator regCid2
+  reg.settledAt === now
+  reg.invoiceHash === "hash-A"
