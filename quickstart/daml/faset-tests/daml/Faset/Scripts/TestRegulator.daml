@@ -8,9 +8,14 @@ module Faset.Scripts.TestRegulator where
 import Daml.Script
 import DA.Assert ((===))
 import DA.Optional (isNone)
+import qualified DA.Set as Set
 
+import Faset.Registry (RegistryState(..))
 import Faset.Registration (Registration(..), GrantRegulatorView(..))
+import Faset.Cash (CashHolding(..))
+import Faset.Settlement (InvoiceSettlementAuthorization(..), Settle(..))
 import Faset.Scripts.Setup (allocFasetParties)
+import Faset.Scripts.TestSettleSetup (setupDeal)
 
 -- | Pre-grant the regulator cannot read the Registration; after
 --   GrantRegulatorView it can, and the recreated record keeps the original settledAt.
@@ -38,3 +43,70 @@ test_grantAddsRegulatorPreservingSettledAt = script do
   Some reg <- queryContractId regulator regCid2
   reg.settledAt === now
   reg.invoiceHash === "hash-A"
+
+-- | Test 7 (regulator pre-grant, §6 / ADR-09): after a Settle WITHOUT a mandate the
+--   regulator sees no Registration, and the record discloses to no one extra
+--   (disclosedTo == []). The regulator's blindness is structural (its party value
+--   never enters a no-mandate Settle); the disclosedTo == [] check gives the wiring
+--   concrete teeth.
+test_regulatorSeesNothingBeforeGrant : Script ()
+test_regulatorSeesNothingBeforeGrant = script do
+  (operator, supplier, financierA, _, invCid, lockCid, ih) <- setupDeal 1000.0 900.0
+  regulator <- allocateParty "regulator"
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authCid <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  Some invDisc <- queryDisclosure supplier invCid
+  [(holdingCid, _)] <- query @CashHolding financierA
+  Some holdingDisc <- queryDisclosure financierA holdingCid
+  submit (actAs operator <> discloseMany [invDisc, holdingDisc]) $ exerciseCmd authCid Settle with
+    registryStateCid = rsCid
+    cashLockCid = lockCid
+    invoiceCid = invCid
+    regulatorMandateCid = None
+  -- no mandate → the regulator sees NO Registration, and nothing was disclosed.
+  regs <- query @Registration regulator
+  length regs === 0
+  [(_, reg)] <- query @Registration operator
+  reg.disclosedTo === []
+
+-- | Test 9 (grant ≠ rivals, §6 / ADR-09): granting the regulator a view of A's
+--   Registration lets the regulator read it, but the rival financierB STILL cannot —
+--   observer scoping is per-contract, and GrantRegulatorView only ever adds the
+--   named regulator (financierB is never in scope). Rival-blindness survives the grant.
+test_grantToRegulatorDoesNotExposeToRival : Script ()
+test_grantToRegulatorDoesNotExposeToRival = script do
+  (operator, supplier, financierA, financierB, invCid, lockCid, ih) <- setupDeal 1000.0 900.0
+  regulator <- allocateParty "regulator"
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authCid <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  Some invDisc <- queryDisclosure supplier invCid
+  [(holdingCid, _)] <- query @CashHolding financierA
+  Some holdingDisc <- queryDisclosure financierA holdingCid
+  submit (actAs operator <> discloseMany [invDisc, holdingDisc]) $ exerciseCmd authCid Settle with
+    registryStateCid = rsCid
+    cashLockCid = lockCid
+    invoiceCid = invCid
+    regulatorMandateCid = None
+  -- operator grants the regulator a view of A's Registration.
+  [(regCid, _)] <- query @Registration operator
+  _ <- submit operator $ exerciseCmd regCid GrantRegulatorView with
+    regulator = regulator
+  -- the regulator now sees it; the rival financierB still does NOT.
+  regsReg <- query @Registration regulator
+  length regsReg === 1
+  regsB <- query @Registration financierB
+  length regsB === 0
