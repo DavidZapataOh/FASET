@@ -27,6 +27,14 @@ tasks.register<Exec>("testDaml") {
     environment("DPM_SDK_VERSION", requiredVersion)
 }
 
+// The no-leak invariant gate (CLAUDE.md "Hecho"): runs ONLY the faset-invariants
+// package, whose sole scripts are the 7 aliases of the canonical subset {1,2,3,4,9,11,13}.
+tasks.register<Exec>("testInvariants") {
+    val requiredVersion = VersionFiles.damlYamlSdk
+    commandLine("dpm", "test", "--package-root", "faset-invariants")
+    environment("DPM_SDK_VERSION", requiredVersion)
+}
+
 tasks.register<com.digitalasset.transcode.codegen.java.gradle.JavaCodegenTask>("codeGen") {
     dar.from("$projectDir/licensing/.daml/dist/quickstart-licensing-0.0.1.dar")
     destination = file("$rootDir/backend/build/generated-daml-bindings")

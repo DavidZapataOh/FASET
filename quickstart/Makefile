@@ -210,6 +210,11 @@ test-daml: ## Run daml tests
 test-daml: build-daml
 	./gradlew :daml:testDaml
 
+.PHONY: test-invariants
+test-invariants: ## Run ONLY the no-leak invariant gate {1,2,3,4,9,11,13} (CLAUDE.md "Hecho")
+test-invariants: build-daml
+	./gradlew :daml:testInvariants
+
 .PHONY: build-docker-images
 build-docker-images: docker-available
 	$(call docker-compose, ${DOCKER_COMPOSE_OBSERVABILITY_FILES} $(RESOURCE_CONSTRAINT_CONFIG) build)

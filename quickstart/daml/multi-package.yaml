@@ -7,3 +7,4 @@ packages:
 - ./licensing-tests
 - ./faset
 - ./faset-tests
+- ./faset-invariants

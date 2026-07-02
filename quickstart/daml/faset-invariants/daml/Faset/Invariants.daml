@@ -1,0 +1,44 @@
+-- | The project's no-leak invariant GATE (CLAUDE.md "Hecho"). This package's ONLY
+--   scripts are the 7 aliases below — the canonical subset {1,2,3,4,9,11,13} — each
+--   importing its test from the faset-tests DAR (a DATA-dependency, so the other
+--   tests in faset-tests are NOT discovered/run here). Therefore
+--   `dpm test --package-root faset-invariants` runs EXACTLY these 7, named so the
+--   output lists each invariant. Adding a deal/settle test (5,6,7,8,10,12) would NOT
+--   run here — the gate is the moat's operational definition, not the full suite.
+module Faset.Invariants where
+
+import Daml.Script
+
+import Faset.Scripts.TestNoLeak (test_registryStateNotVisibleToRival, test_winnerRegistrationNotVisibleToRival)
+import Faset.Scripts.TestStructural (test_rivalCannotReadWinnerTerms, test_operatorCannotReadFinancingAgreement)
+import Faset.Scripts.TestRegulator (test_grantToRegulatorDoesNotExposeToRival)
+import Faset.Scripts.TestOffer (test_losingOfferInvisibleToOperatorAndRival)
+import Faset.Scripts.TestNoCufe (test_invoiceIdentityIsHashNotCufe)
+
+-- §6 test 1 — RegistryState invisible to a rival financier.
+gate01_registryStateNotVisibleToRival : Script ()
+gate01_registryStateNotVisibleToRival = test_registryStateNotVisibleToRival
+
+-- §6 test 2 — the winner's Registration invisible to a rival financier.
+gate02_winnerRegistrationNotVisibleToRival : Script ()
+gate02_winnerRegistrationNotVisibleToRival = test_winnerRegistrationNotVisibleToRival
+
+-- §6 test 3 — a rival reads none of the winner's economics (Registration/Invoice/CashLock).
+gate03_rivalCannotReadWinnerTerms : Script ()
+gate03_rivalCannotReadWinnerTerms = test_rivalCannotReadWinnerTerms
+
+-- §6 test 4 — the operator is not a stakeholder of the FinancingAgreement.
+gate04_operatorCannotReadFinancingAgreement : Script ()
+gate04_operatorCannotReadFinancingAgreement = test_operatorCannotReadFinancingAgreement
+
+-- §6 test 9 — granting the regulator does not expose the record to a rival.
+gate09_grantToRegulatorDoesNotExposeToRival : Script ()
+gate09_grantToRegulatorDoesNotExposeToRival = test_grantToRegulatorDoesNotExposeToRival
+
+-- §6 test 11 — a losing FinancingOffer is invisible to operator and rival.
+gate11_losingOfferInvisibleToOperatorAndRival : Script ()
+gate11_losingOfferInvisibleToOperatorAndRival = test_losingOfferInvisibleToOperatorAndRival
+
+-- §6 test 13 — the Invoice's on-ledger identity is the invoiceHash, never a raw CUFE.
+gate13_invoiceIdentityIsHashNotCufe : Script ()
+gate13_invoiceIdentityIsHashNotCufe = test_invoiceIdentityIsHashNotCufe

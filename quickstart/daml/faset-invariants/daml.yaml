@@ -1,0 +1,14 @@
+sdk-version: 3.4.11
+name: quickstart-faset-invariants
+source: daml
+version: 0.0.1
+dependencies:
+  - daml-prim
+  - daml-stdlib
+  - daml-script
+data-dependencies:
+- ../faset-tests/.daml/dist/quickstart-faset-tests-0.0.1.dar
+- ../faset/.daml/dist/quickstart-faset-0.0.1.dar
+build-options:
+  - --ghc-option=-Wunused-binds
+  - --ghc-option=-Wunused-matches
