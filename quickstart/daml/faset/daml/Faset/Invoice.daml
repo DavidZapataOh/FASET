@@ -1,0 +1,20 @@
+-- | The receivable being financed (CONTEXT.md §2, ADR-04).
+--   `signatory supplier`: the invoice is the supplier's own asset until it is
+--   ceded at settlement. It carries `invoiceHash` (the deterministic pseudonym of
+--   the fiscal CUFE) — the raw CUFE is NEVER a field of any Daml contract (ADR-04):
+--   it lives off-ledger, and each financier verifies `invoiceHash` against the
+--   DIAN-validated CUFE before committing cash.
+--   No choices yet: the invoice is archived from within `Settle` via the supplier's
+--   authority on `InvoiceSettlementAuthorization` (registral cession, ADR-06), added
+--   in a later task. NO contract keys (Daml 3.4.11 / LF 2.x).
+module Faset.Invoice where
+
+template Invoice
+  with
+    supplier : Party
+    invoiceHash : Text
+    faceValue : Decimal
+    dueDate : Time
+    currency : Text
+  where
+    signatory supplier
