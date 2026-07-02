@@ -6,20 +6,19 @@
 --   — Amulet is an upgrade, not a dependency. NO contract keys.
 module Faset.Cash where
 
--- | A unit of cash owned by `owner`. `signatory owner`: only the owner can bring
---   their own funds on-ledger. `observer operator`: the operator is the in-model
---   cash executor/clearing venue (ADR-07) and must be able to see the holdings it
---   moves during `Settle` — Canton gates a fetch on the submitter's visibility, and
---   only the operator submits `Settle`. This mirrors CIP-56, where the registry is a
---   stakeholder of every holding; sprint-07 replaces it with Amulet.
+-- | A unit of cash owned by `owner`. `signatory owner`, NO operator observer:
+--   holdings are private to their owner — a financier's cash balances must NOT leak
+--   to the operator (that would expose competitively-sensitive liquidity and break
+--   the neutral-utility narrative). During `Settle` the financier EXPLICITLY
+--   DISCLOSES only the specific holding being spent to the operator (explicit
+--   disclosure, CONTEXT.md §0), so the operator sees that one holding, never a
+--   financier's full position. Sprint-07 upgrades this to Amulet.
 template CashHolding
   with
-    operator : Party
     owner : Party
     amount : Decimal
   where
     signatory owner
-    observer operator
 
 -- | Cash committed by a financier for a specific settlement, executable by the
 --   operator (the clearing venue / executor, ADR-07). Modelled on CIP-56's
@@ -58,10 +57,7 @@ template CashLock
         archive holdingCid
         if h.amount > amount
           then do
-            _ <- create CashHolding with
-              operator = operator
-              owner = financier
-              amount = h.amount - amount
+            _ <- create CashHolding with owner = financier, amount = h.amount - amount
             pure ()
           else pure ()
         pure amount

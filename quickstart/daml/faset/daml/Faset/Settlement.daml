@@ -70,10 +70,7 @@ template InvoiceSettlementAuthorization
             -- authority) mints the supplier's holding. Insufficiency throws in (iv),
             -- reverting (iii) too → never a burnt hash (test 5).
             credited <- exercise cashLockCid CashLock_Execute
-            _ <- create CashHolding with
-              operator = operator
-              owner = supplier
-              amount = credited
+            _ <- create CashHolding with owner = supplier, amount = credited
             -- (v) registral cession: the supplier cedes the invoice by archiving it.
             archive invoiceCid
             -- (vi) operator records the winner's economics + derived rate (ADR-07).

@@ -39,8 +39,13 @@ test_onlyOperatorSettlesAndConsumesAuth = script do
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
-  -- The operator (delegated controller) settles; the authorization is consumed.
-  submit operator $ exerciseCmd authCid Settle with
+  -- The operator (delegated controller) settles. Explicit disclosure: the supplier
+  -- discloses the Invoice and the financier the CashHolding to the operator's
+  -- submission (actAs stays [operator] → only the operator submits; ADR-07/§0).
+  Some invDisc <- queryDisclosure supplier invCid
+  [(holdingCid, _)] <- query @CashHolding financierA
+  Some holdingDisc <- queryDisclosure financierA holdingCid
+  submit (actAs operator <> discloseMany [invDisc, holdingDisc]) $ exerciseCmd authCid Settle with
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
@@ -64,7 +69,13 @@ test_settleHappyPath = script do
     winningFinancier = financierA
     invoiceHash = ih
     expectedAdvance = 900.0
-  submit operator $ exerciseCmd authCid Settle with
+  -- Explicit disclosure: supplier discloses the Invoice, financier the CashHolding,
+  -- to the operator's submission. Submission MECHANISM only — actAs stays [operator]
+  -- ("solo el operator somete"); the assertions below are unchanged.
+  Some invDisc <- queryDisclosure supplier invCid
+  [(holdingCid, _)] <- query @CashHolding financierA
+  Some holdingDisc <- queryDisclosure financierA holdingCid
+  submit (actAs operator <> discloseMany [invDisc, holdingDisc]) $ exerciseCmd authCid Settle with
     registryStateCid = rsCid
     cashLockCid = lockCid
     invoiceCid = invCid
