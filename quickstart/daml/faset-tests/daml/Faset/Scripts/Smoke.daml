@@ -1,0 +1,9 @@
+-- | Smoke test: confirms the faset-tests harness compiles and `dpm test` runs
+--   end-to-end against the faset package before we write the first no-leak RED.
+module Faset.Scripts.Smoke where
+
+import Daml.Script
+
+testSmoke : Script ()
+testSmoke = script do
+  pure ()

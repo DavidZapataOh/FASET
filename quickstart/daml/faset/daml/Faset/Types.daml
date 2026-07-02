@@ -1,0 +1,9 @@
+-- | Shared types for the FASET confidential receivables-financing model.
+module Faset.Types where
+
+-- | Reason a financing registration is rejected by the Single-Pledge Registry.
+--   'AlreadyFinanced' is the ONLY signal a rival financier ever receives — it
+--   learns that some invoice is taken, never by whom, for how much, or at what rate.
+data RejectReason
+  = AlreadyFinanced
+  deriving (Eq, Show)

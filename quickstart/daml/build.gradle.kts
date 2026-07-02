@@ -23,7 +23,7 @@ tasks.register<Exec>("compileDaml") {
 
 tasks.register<Exec>("testDaml") {
     val requiredVersion = VersionFiles.damlYamlSdk
-    commandLine("dpm", "test", "--package-root", "licensing-tests")
+    commandLine("dpm", "test", "--package-root", "faset-tests")
     environment("DPM_SDK_VERSION", requiredVersion)
 }
 
