@@ -66,3 +66,6 @@ logs
 **/canton-data/
 **/localnet-data/
 **/*-participant-*/keys/
+
+# Tooling caches (git-hook / lint caches) generated into the tree
+**/.impeccable/
