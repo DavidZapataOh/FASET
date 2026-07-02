@@ -1,0 +1,69 @@
+-- | Structural privacy invariants (CONTEXT.md §6 tests 3 & 4, ADR-07). The valid
+--   terms-privacy guarantee is rival→winner-amounts = None (NOT operator: the operator
+--   is the clearing venue and DOES persist the economics it settles — but it is never
+--   a stakeholder of the FinancingAgreement). Both invariants are STRUCTURAL: the
+--   leaked-to party (a rival financier / the operator) never enters the relevant
+--   contract's flow, so it can never be a stakeholder. Positive controls confirm the
+--   queries reflect real visibility (a genuine stakeholder DOES see the contract).
+module Faset.Scripts.TestStructural where
+
+import Daml.Script
+import DA.Optional (isNone)
+
+import Faset.Registration (Registration(..))
+import Faset.Offer (FinancingOffer(..), Accept(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+-- | Test 3 — a rival financier reads NEITHER the winner's Registration
+--   (advance/faceValue/rate) NOR the winner's FinancingAgreement (rate/advance).
+test_rivalCannotReadWinnerTerms : Script ()
+test_rivalCannotReadWinnerTerms = script do
+  (operator, supplier, financierA, financierB, _) <- allocFasetParties
+  now <- getTime
+  -- winner A's accepted terms → FinancingAgreement
+  offerA <- submit financierA $ createCmd FinancingOffer with
+    financier = financierA
+    supplier = supplier
+    invoiceHash = "hash-1"
+    rate = 0.10
+    advance = 900.0
+  agA <- submit supplier $ exerciseCmd offerA Accept
+  -- winner A's settled economics → Registration
+  regA <- submit operator $ createCmd Registration with
+    operator = operator
+    winningFinancier = financierA
+    supplier = supplier
+    invoiceHash = "hash-1"
+    faceValue = 1000.0
+    advance = 900.0
+    rate = 0.10
+    settledAt = now
+    disclosedTo = []
+  -- the rival financierB reads NEITHER
+  mRegB <- queryContractId financierB regA
+  assertMsg "rival must NOT read the winner's Registration" (isNone mRegB)
+  mAgB <- queryContractId financierB agA
+  assertMsg "rival must NOT read the winner's FinancingAgreement" (isNone mAgB)
+  -- positive controls: the winner DOES see both → the None results are true negatives.
+  Some _ <- queryContractId financierA regA
+  Some _ <- queryContractId financierA agA
+  pure ()
+
+-- | Test 4 — the operator is NEVER a stakeholder of the FinancingAgreement (the terms
+--   contract), even though it persists the settled economics in a Registration.
+test_operatorCannotReadFinancingAgreement : Script ()
+test_operatorCannotReadFinancingAgreement = script do
+  (operator, supplier, financierA, _, _) <- allocFasetParties
+  offerCid <- submit financierA $ createCmd FinancingOffer with
+    financier = financierA
+    supplier = supplier
+    invoiceHash = "h1"
+    rate = 0.10
+    advance = 900.0
+  agCid <- submit supplier $ exerciseCmd offerCid Accept
+  -- the operator is NOT a stakeholder of the terms contract
+  mAgOp <- queryContractId operator agCid
+  assertMsg "operator must NOT be a stakeholder of the FinancingAgreement" (isNone mAgOp)
+  -- positive control: the supplier (a signatory) DOES see it.
+  Some _ <- queryContractId supplier agCid
+  pure ()
