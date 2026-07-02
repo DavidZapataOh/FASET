@@ -1,0 +1,45 @@
+-- | Tests for the atomic settlement choice `Settle` (CONTEXT.md ADR-06/07, §6).
+--   This task (sprint-03/02) locks in the DELEGATION contract: `Settle` lives on the
+--   supplier-signed `InvoiceSettlementAuthorization`, and ONLY the operator (the
+--   delegated controller) can submit it — encoding the hard rule "solo el operator
+--   somete Settle" (CLAUDE.md) and the {supplier, operator} authority of ADR-06/07.
+--   The real two-branch effects (cash leg, invoice cession, Registration, registry
+--   compare-and-set) are driven by tasks 03 (success), 04 (atomicity), 05 (reject).
+module Faset.Scripts.TestSettle where
+
+import Daml.Script
+import DA.Optional (isNone)
+import qualified DA.Set as Set
+
+import Faset.Registry (RegistryState(..))
+import Faset.Settlement (InvoiceSettlementAuthorization(..), Settle(..))
+import Faset.Scripts.TestSettleSetup (setupDeal)
+
+-- | Delegation invariant: the operator — and only the operator — can submit
+--   `Settle` on the supplier-signed authorization, and Settle consumes it.
+--   A non-controller (the supplier, even as the signatory) must be rejected.
+test_onlyOperatorSettlesAndConsumesAuth : Script ()
+test_onlyOperatorSettlesAndConsumesAuth = script do
+  (operator, supplier, financierA, _, invCid, lockCid, ih) <- setupDeal 1000.0 900.0
+  rsCid <- submit operator $ createCmd RegistryState with
+    operator = operator
+    financed = Set.empty
+  authCid <- submit supplier $ createCmd InvoiceSettlementAuthorization with
+    supplier = supplier
+    operator = operator
+    winningFinancier = financierA
+    invoiceHash = ih
+    expectedAdvance = 900.0
+  -- The supplier signed the authorization but is NOT the controller of Settle →
+  -- it must not be able to submit it (only the operator may — ADR-07).
+  submitMustFail supplier $ exerciseCmd authCid Settle with
+    registryStateCid = rsCid
+    cashLockCid = lockCid
+    invoiceCid = invCid
+  -- The operator (delegated controller) settles; the authorization is consumed.
+  submit operator $ exerciseCmd authCid Settle with
+    registryStateCid = rsCid
+    cashLockCid = lockCid
+    invoiceCid = invCid
+  mAuth <- queryContractId supplier authCid
+  assertMsg "Settle must consume the InvoiceSettlementAuthorization" (isNone mAuth)
