@@ -9,11 +9,11 @@
 --   NO contract keys (Daml 3.4.11 / LF 2.x); the cids are passed as choice args.
 module Faset.Settlement where
 
-import qualified DA.Set as Set
-
-import Faset.Registry (RegistryState(..))
-import Faset.Cash (CashLock)
-import Faset.Invoice (Invoice)
+import Faset.Registry (RegistryState(..), tryRegister)
+import Faset.Registration (Registration(..))
+import Faset.Cash (CashHolding(..), CashLock(..), CashLock_Execute(..))
+import Faset.Invoice (Invoice(..))
+import Faset.Types (RejectReason(..))
 
 -- | Supplier-signed delegation carrying the `invoiceHash` it authorizes and the
 --   `expectedAdvance` (fairness floor the success branch will assert, ADR-06).
@@ -46,6 +46,45 @@ template InvoiceSettlementAuthorization
       controller operator
       do
         rs <- fetch registryStateCid
-        if invoiceHash `Set.member` rs.financed
-          then pure ()   -- STUB rejection branch (real in task 05)
-          else pure ()   -- STUB success branch (real in task 03)
+        -- GATE (ADR-06): membership FIRST, via the unit-tested compare-and-set
+        -- primitive. The rejection branch must not touch the Invoice (test 12).
+        case tryRegister invoiceHash rs.financed of
+          Left AlreadyFinanced ->
+            -- STUB rejection branch (real in task 05: create RegistrationRejected).
+            -- Deliberately does NOT fetch the Invoice.
+            pure ()
+          Right financed' -> do
+            -- (i) invoiceHash guard + (ii) fairness guard — fail-fast BEFORE mutating.
+            inv <- fetch invoiceCid
+            assertMsg "Settle: invoice hash must match the authorized hash"
+              (inv.invoiceHash == invoiceHash)
+            lock <- fetch cashLockCid
+            assertMsg "Settle: locked cash must cover the expected advance (fairness)"
+              (lock.amount >= expectedAdvance)
+            -- (iii) recreate RegistryState with the hash inserted (financed' already
+            -- carries it, from tryRegister). Serialisation preserved (consume+recreate).
+            archive registryStateCid
+            _ <- create RegistryState with operator = operator; financed = financed'
+            -- (iv) cash leg financier -> supplier: CashLock_Execute (financier
+            -- authority) frees the funds and returns the advance; THIS body (supplier
+            -- authority) mints the supplier's holding. Insufficiency throws in (iv),
+            -- reverting (iii) too → never a burnt hash (test 5).
+            credited <- exercise cashLockCid CashLock_Execute
+            _ <- create CashHolding with
+              operator = operator
+              owner = supplier
+              amount = credited
+            -- (v) registral cession: the supplier cedes the invoice by archiving it.
+            archive invoiceCid
+            -- (vi) operator records the winner's economics + derived rate (ADR-07).
+            now <- getTime
+            _ <- create Registration with
+              operator = operator
+              winningFinancier = winningFinancier
+              supplier = supplier
+              invoiceHash = invoiceHash
+              faceValue = inv.faceValue
+              advance = lock.amount
+              rate = (inv.faceValue - lock.amount) / inv.faceValue
+              settledAt = now
+            pure ()

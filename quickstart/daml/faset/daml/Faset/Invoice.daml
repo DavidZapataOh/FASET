@@ -9,8 +9,14 @@
 --   in a later task. NO contract keys (Daml 3.4.11 / LF 2.x).
 module Faset.Invoice where
 
+-- | `observer operator`: the operator (clearing venue) must be able to fetch and
+--   archive the invoice during `Settle` — Canton gates a fetch on the submitter's
+--   visibility, and only the operator submits `Settle` (ADR-07). Safe by design:
+--   the invoice carries `invoiceHash` (the pseudonym), NEVER the raw CUFE (test 13),
+--   so operator-visibility exposes no CUFE. Rivals are still never observers.
 template Invoice
   with
+    operator : Party
     supplier : Party
     invoiceHash : Text
     faceValue : Decimal
@@ -18,3 +24,4 @@ template Invoice
     currency : Text
   where
     signatory supplier
+    observer operator

@@ -7,13 +7,19 @@
 module Faset.Cash where
 
 -- | A unit of cash owned by `owner`. `signatory owner`: only the owner can bring
---   their own funds on-ledger.
+--   their own funds on-ledger. `observer operator`: the operator is the in-model
+--   cash executor/clearing venue (ADR-07) and must be able to see the holdings it
+--   moves during `Settle` — Canton gates a fetch on the submitter's visibility, and
+--   only the operator submits `Settle`. This mirrors CIP-56, where the registry is a
+--   stakeholder of every holding; sprint-07 replaces it with Amulet.
 template CashHolding
   with
+    operator : Party
     owner : Party
     amount : Decimal
   where
     signatory owner
+    observer operator
 
 -- | Cash committed by a financier for a specific settlement, executable by the
 --   operator (the clearing venue / executor, ADR-07). Modelled on CIP-56's
@@ -32,10 +38,16 @@ template CashLock
     signatory financier
     observer operator
 
-    -- | Executor path (operator during `Settle`): move `amount` from the
-    --   financier's holding to the supplier, returning any change to the financier.
-    --   Insufficiency throws here → the enclosing `Settle` reverts as a whole.
-    choice CashLock_Execute : ()
+    -- | Executor path (operator during `Settle`): consume the financier's holding,
+    --   return any change to the financier, and RETURN `amount` (the advance) for the
+    --   caller to credit to the supplier. This choice only has {financier, operator}
+    --   authority, so it cannot mint a supplier-owned holding itself (that needs the
+    --   supplier's authority); the caller `Settle` — which holds the supplier's
+    --   authority via `InvoiceSettlementAuthorization` — creates the supplier holding
+    --   from the returned amount, all in the same atomic transaction. Insufficiency
+    --   throws HERE (execute-time, against holding.amount) → the enclosing `Settle`
+    --   reverts as a whole, incl. the already-inserted registry hash (test 5).
+    choice CashLock_Execute : Decimal
       controller operator
       do
         h <- fetch holdingCid
@@ -44,12 +56,15 @@ template CashLock
         assertMsg "CashLock_Execute: insufficient funds in holding"
           (h.amount >= amount)
         archive holdingCid
-        _ <- create CashHolding with owner = supplier, amount = amount
         if h.amount > amount
           then do
-            _ <- create CashHolding with owner = financier, amount = h.amount - amount
+            _ <- create CashHolding with
+              operator = operator
+              owner = financier
+              amount = h.amount - amount
             pure ()
           else pure ()
+        pure amount
 
     -- | Recovery path (financier): drop the lock without moving cash. The
     --   `CashHolding` was never consumed by the lock, so the funds stay with the

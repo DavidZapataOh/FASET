@@ -28,12 +28,14 @@ setupDeal funded advance = script do
   now <- getTime
   let ih = "hash-1"
   invCid <- submit supplier $ createCmd Invoice with
+    operator = operator
     supplier = supplier
     invoiceHash = ih
     faceValue = 1000.0
     dueDate = addRelTime now (days 30)
     currency = "COP"
   holdingCid <- submit financierA $ createCmd CashHolding with
+    operator = operator
     owner = financierA
     amount = funded
   lockCid <- submit financierA $ createCmd CashLock with
