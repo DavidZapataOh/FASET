@@ -1,0 +1,26 @@
+-- | Offer flow (CONTEXT.md ADR-10): a financier makes a private FinancingOffer and
+--   the supplier accepts it, yielding a FinancingAgreement that carries the winner
+--   and the accepted economics. Privacy of the offer (test 11) and operator-blindness
+--   to the agreement (test 4) are covered in later tasks/sprints.
+module Faset.Scripts.TestOffer where
+
+import Daml.Script
+import DA.Assert ((===))
+
+import Faset.Offer (FinancingOffer(..), FinancingAgreement(..), Accept(..))
+import Faset.Scripts.Setup (allocFasetParties)
+
+-- | Accepting an offer creates the agreement with the offer's winner and advance.
+test_acceptCreatesAgreement : Script ()
+test_acceptCreatesAgreement = script do
+  (_, supplier, financierA, _, _) <- allocFasetParties
+  offerCid <- submit financierA $ createCmd FinancingOffer with
+    financier = financierA
+    supplier = supplier
+    invoiceHash = "h1"
+    rate = 0.10
+    advance = 900.0
+  agCid <- submit supplier $ exerciseCmd offerCid Accept
+  Some ag <- queryContractId supplier agCid
+  ag.winningFinancier === financierA
+  ag.advance === 900.0

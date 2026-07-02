@@ -1,0 +1,47 @@
+-- | Private financing offers and the accepted agreement (CONTEXT.md ADR-10, §2).
+--   A `FinancingOffer` is unilateral and invisible to rival financiers: its only
+--   stakeholders are {financier, supplier}. The supplier accepts one via `Accept`,
+--   which creates a `FinancingAgreement` signed by {supplier, winningFinancier} —
+--   the operator is NEVER a stakeholder of the agreement (test 4). The financier's
+--   authority for the agreement flows from its being the signatory of the offer on
+--   which `Accept` is exercised. NO contract keys (Daml 3.4.11 / LF 2.x).
+module Faset.Offer where
+
+-- | A financier's private, unilateral offer to finance an invoice (by its hash).
+--   `signatory financier`, `observer supplier` → invisible to other financiers.
+template FinancingOffer
+  with
+    financier : Party
+    supplier : Party
+    invoiceHash : Text
+    rate : Decimal
+    advance : Decimal
+  where
+    signatory financier
+    observer supplier
+
+    -- | The supplier accepts this offer → binding FinancingAgreement.
+    choice Accept : ContractId FinancingAgreement
+      controller supplier
+      do
+        -- STUB (not yet correct): a placeholder agreement so the module compiles.
+        -- The real mapping (winningFinancier = financier, advance from the offer)
+        -- lands in GREEN. Wrong values here → test_acceptCreatesAgreement fails.
+        create FinancingAgreement with
+          supplier = supplier
+          winningFinancier = supplier
+          invoiceHash = invoiceHash
+          rate = rate
+          advance = 0.0
+
+-- | The accepted deal's terms. `signatory supplier, winningFinancier`; the operator
+--   is deliberately NOT a stakeholder (threat-model test 4, sprint-06).
+template FinancingAgreement
+  with
+    supplier : Party
+    winningFinancier : Party
+    invoiceHash : Text
+    rate : Decimal
+    advance : Decimal
+  where
+    signatory supplier, winningFinancier
