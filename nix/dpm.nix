@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> {} }:
 
 let
-  dpmVersion = "3.4.11";
+  dpmVersion = "3.5.2";
   system = pkgs.stdenv.hostPlatform.system;
   os = if pkgs.stdenv.isDarwin then "darwin" else "linux";
   arch = if pkgs.stdenv.isAarch64 then "arm64" else "amd64";
@@ -9,7 +9,7 @@ let
   dpmHashes = {
     "x86_64-linux" = "sha256:1k9csx67s81jzr02qaa6ggh1hps4m1rd3yrpxrp1ly5mv2w2hwqp";
     "aarch64-linux" = "sha256:162nasjhrh8vhn2j3hqswi8w7q1xnn7njcqzdkfk9aq8x1gq9lgw";
-    "aarch64-darwin" = "sha256:1i10yqf3a2i5fkhyhkk3dw35jbjdpxp236wdjz31d9z5xz80zg5w";
+    "aarch64-darwin" = "sha256:1srqpwglzljk0yiszb90bkp1b368a08dl95j77j72ijwa6hv2igr";
   };
   dpmHash = dpmHashes.${system} or (throw "Unsupported system: ${system}");
 in

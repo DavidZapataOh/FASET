@@ -58,8 +58,8 @@ echo "Fetching versions..."
 INFO_URL="https://docs.${NETWORK}.global.canton.network.sync.global/info"
 
 # Fetch and validate Splice version and Migration ID
-SPLICE_VERSION=$(curl -s "$INFO_URL" | jq -r '.synchronizer?.active?.version')
-MIGRATION_ID=$(curl -s "$INFO_URL" | jq -r '.synchronizer?.active?.migration_id')
+SPLICE_VERSION=$(curl -s "$INFO_URL" | jq -r '.synchronizer?.current?.version')
+MIGRATION_ID=$(curl -s "$INFO_URL" | jq -r '.sv?.migration_id')
 
 if [ -z "$SPLICE_VERSION" ] || [ "$SPLICE_VERSION" == "null" ]; then
     echo "❌ Error: Could not fetch SPLICE_VERSION for network '$NETWORK'." >&2
